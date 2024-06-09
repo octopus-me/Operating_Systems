@@ -347,11 +347,25 @@ void list_directory(const char *path, FileSystem *fs) {
         return;
     }
 
+    // Print header
+    printf("%-20s | %-10s | %-25s | %-25s | %-25s |\n", "Nome", "Tamanho", "Criado em", "Modificado em", "Acessado em");
+    printf("----------------------------------------------------------------------------------------------------------------------\n");
+
+    // Print files and directories
     for (int i = 0; i < dir->file_count; i++) {
         File *file = &dir->files[i];
-        printf("Nome: %s, Tamanho: %d, Criado em: %s, Modificado em: %s, Acessado em: %s%s\n",
-               file->name, file->size, ctime(&file->creation_time), ctime(&file->modification_time), ctime(&file->access_time),
-               file->is_directory ? "/" : "");
+        // Remove newline character from ctime output
+        char creation_time[25], modification_time[25], access_time[25];
+        strncpy(creation_time, ctime(&file->creation_time), 24);
+        creation_time[24] = '\0';
+        strncpy(modification_time, ctime(&file->modification_time), 24);
+        modification_time[24] = '\0';
+        strncpy(access_time, ctime(&file->access_time), 24);
+        access_time[24] = '\0';
+
+        printf("%-20s | %-10d | %-25s | %-25s | %-25s%s\n",
+               file->name, file->size, creation_time, modification_time, access_time,
+               file->is_directory ? "| Directory |" : "| File      |");
     }
 }
 
@@ -590,10 +604,27 @@ void atualizadb(FileSystem *fs, Database *db) {
 
 
 void print_database(Database *db) {
+    printf("Árvore de Diretórios e Arquivos:\n");
     for (int i = 0; i < db->count; i++) {
-        printf("%s\n", db->paths[i]);
+        int level = 0;
+        char *path = db->paths[i];
+
+        // Contar o nível de profundidade baseado nos '/' no caminho
+        for (char *p = path; *p; p++) {
+            if (*p == '/') {
+                level++;
+            }
+        }
+
+        // Imprimir com indentação baseada no nível
+        for (int j = 0; j < level; j++) {
+            printf("    ");
+        }
+        printf("|-- %s\n", path);
     }
 }
+
+
 
 void prompt() {
     FileSystem fs;
@@ -602,6 +633,7 @@ void prompt() {
     Database db;
 
     char comando[500];
+    
     while (1) {
         printf("\n{ep3}: ");
         fgets(comando, sizeof(comando), stdin);
@@ -611,7 +643,7 @@ void prompt() {
 
         // Tokenizar o comando
         char *cmd = strtok(comando, " ");
-        printf("%s",cmd);
+
         if (cmd == NULL) {
             continue;
         }
