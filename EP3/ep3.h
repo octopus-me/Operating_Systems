@@ -54,4 +54,3 @@ void copy_file(FileSystem *fs, const char *src_path, const char *dest_path);
 
 void create_file(FileSystem *fs, const char *file_path, int size) ;
 
-
