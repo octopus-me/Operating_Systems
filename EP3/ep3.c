@@ -1,6 +1,5 @@
 #include "ep3.h"
 
-
 void load_directory(FILE *fs_file,Directory *dir){
     fread(&dir->file_count,sizeof(int),1,fs_file);
     for(int i=0;i<dir->file_count;i++){
@@ -74,27 +73,24 @@ void print_directory_tree(Directory *dir, int level) {
     }
 }
 
-void mount_fs(FileSystem *fs, const char *fs_path){
+FILE * mount_fs(FileSystem *fs, const char *fs_path){
     FILE *fs_file = fopen(fs_path, "r+b");
 
     if (fs_file) {
         load_filesystem(fs,fs_file);
-        fclose(fs_file);
         printf("Sistema de arquivos montado de %s: \n", fs_path);
         print_directory_tree(&fs->root,0);
     } else {
         fs_file = fopen(fs_path, "w+b");
         if(!fs_file) {
             printf("Erro ao criar o arquivo do sistema de arquivos. \n");
-            exit(EXIT_FAILURE);
+            return NULL;
         }
         init_fs(fs);
         save_filesystem(fs,fs_file);
-        fclose(fs_file);
         printf("Novo sistema de arquivos criado %s. \n", fs_path);
-
     }
-
+    return fs_file;
 }
 
 // O arquivo do sistema de arquivos simulado ("fs_file") é passado como parâmetro.
@@ -131,7 +127,7 @@ int find_free_block(FileSystem *fs){
     return -1;
 }
 
-void copy_file(FileSystem *fs, const char *src_path, const char *dest_path){
+void copy_file(FileSystem *fs, const char *src_path, const char *dest_path, FILE *fs_file){
     // Abri o arquivo de origem
     FILE *src_file = fopen(src_path, "rb");
     if(src_file==NULL){
@@ -187,13 +183,6 @@ void copy_file(FileSystem *fs, const char *src_path, const char *dest_path){
     int prev_block = -1;
     int first_block = -1;
     char buffer[BLOCK_SIZE];
-    FILE *fs_file = fopen("arquivo", "r+b"); //Abro o sistema de arquivo simulado
-    
-    if (fs_file == NULL) {
-        printf("Erro ao abrir o sistema de arquivos simulado.\n");
-        fclose(src_file);
-        return;
-    }
 
     // Computo o tamanho o arquivo em bytes
     fseek(src_file,0,SEEK_END);
@@ -205,7 +194,6 @@ void copy_file(FileSystem *fs, const char *src_path, const char *dest_path){
     if(size > MAX_FILE_SIZE){
         printf("Rquivo muito grande para ser copiado. \n");
         fclose(src_file);
-        fclose(fs_file);
         return;
     }
 
@@ -250,7 +238,6 @@ void copy_file(FileSystem *fs, const char *src_path, const char *dest_path){
     dest_dir->files[dest_dir->file_count++] = new_file;
 
     fclose(src_file);
-    fclose(fs_file);
 
 }
 
@@ -280,63 +267,74 @@ Directory* navigate_to_directory(Directory *root, const char *path){
 }
 
 // FUNÇÃO PARA CRIAÇÃO DE DIRETÓRIO
-void create_dir(FileSystem *fs, const char *path){
-    char parent_path[MAX_PATH_LEN];
-    char dir_name[MAX_FILENAME_LEN];
+void create_dir(FileSystem *fs, const char *path) {
+    char temp_path[MAX_PATH_LEN];
+    Directory *current_dir = &fs->root;
 
-    // Extrair o nome do diretório e o caminho do diretório pai
-    strcpy(parent_path,path);
-    char *last_slash = strrchr(parent_path,'/');
+    // Copiar o caminho para a string temporária para manipulação
+    strcpy(temp_path, path);
 
-    if(last_slash != NULL){
-        strcpy(dir_name,last_slash+1);
-        *last_slash = '\0';
-    } else {
-        strcpy(parent_path,"/");
-        strcpy(dir_name,path);
+    // Dividir o caminho por '/'
+    char *token = strtok(temp_path, "/");
+
+    while (token != NULL) {
+        int found = 0;
+
+        // Verificar se o subdiretório já existe
+        for (int i = 0; i < current_dir->file_count; i++) {
+            if (strcmp(current_dir->files[i].name, token) == 0 && current_dir->files[i].is_directory) {
+                current_dir = current_dir->files[i].directory;
+                found = 1;
+                break;
+            }
+        }
+
+        // Se o subdiretório não existe, criar um novo
+        if (!found) {
+            Directory *new_dir = malloc(sizeof(Directory));
+            strcpy(new_dir->name, token);
+            new_dir->file_count = 0;
+
+            File new_dir_file;
+            strcpy(new_dir_file.name, token);
+            new_dir_file.size = 0;
+            time(&new_dir_file.creation_time);
+            new_dir_file.modification_time = new_dir_file.creation_time;
+            new_dir_file.access_time = new_dir_file.creation_time;
+            new_dir_file.start_block = -1; // Diretórios não têm bloco inicial
+            new_dir_file.is_directory = 1;
+            new_dir_file.directory = new_dir;
+
+            current_dir->files[current_dir->file_count++] = new_dir_file;
+            current_dir = new_dir;
+        }
+
+        // Próximo token
+        token = strtok(NULL, "/");
     }
+}
 
-    // Navegar até o diretorio pai
-    Directory *parent_dir = navigate_to_directory(&fs->root,parent_path);
-    if(parent_dir == NULL){
-        printf("Diretorio não encontrado. \n");
-        // ATENÇÃO: Em tese, ele precisa criar os diretórios caso não existam;
-        return;
-    }
 
-    // Verifica se já existe um arquivo no diretório com o mesmo nome
-    for(int i=0;i<parent_dir->file_count;i++){
-        if(strcmp(parent_dir->files[i].name,dir_name)==0){
-            printf("Um arquivo ou diretorio com o mesmo nome já existe \n");
-            return;
+
+void unmount_fs(FileSystem *fs, FILE *fs_file) {
+    // Fechar o arquivo de sistema de arquivos
+    fclose(fs_file);
+    
+    // Não há necessidade de liberar `files` dentro de `Directory` pois é estático
+    // A função ainda vai percorrer os diretórios para garantir que estamos liberando corretamente
+
+    void free_directory(Directory *dir) {
+        for (int i = 0; i < dir->file_count; i++) {
+            if (dir->files[i].is_directory) {
+                free_directory(dir->files[i].directory);
+                free(dir->files[i].directory);  // Liberar o ponteiro do diretório
+            }
         }
     }
 
-    //Cria o novo diretorio
-
-    Directory *new_dir = malloc(sizeof(Directory));
-    strcpy(new_dir->name,dir_name);
-    new_dir->file_count = 0;
-
-    File new_dir_file;
-    strcpy(new_dir_file.name,dir_name);
-    new_dir_file.size = 0;
-    time(&new_dir_file.creation_time);
-    new_dir_file.modification_time = new_dir_file.creation_time;
-    new_dir_file.access_time = new_dir_file.creation_time;
-    new_dir_file.start_block = -1; // Diretorios nao tem bloco inicial
-    new_dir_file.is_directory = 1;
-    new_dir_file.directory = new_dir;
-
-    parent_dir->files[parent_dir->file_count++] = new_dir_file;
+    free_directory(&fs->root);
 }
 
-
-void unmount_fs(const char *file_path, FileSystem *fs) {
-    FILE *file = fopen(file_path, "wb");
-    fwrite(fs, sizeof(FileSystem), 1, file);
-    fclose(file);
-}
 
 
 
@@ -520,7 +518,7 @@ File *find_file(Directory *dir, const char *file_name){
     return NULL;
 }
 
-void mostra_arquivo(FileSystem *fs,  const char *file_path){
+void mostra_arquivo(FileSystem *fs,  const char *file_path, FILE *fs_file){
     char parent_path[MAX_PATH_LEN];
     char file_name[MAX_FILENAME_LEN];
 
@@ -551,9 +549,6 @@ void mostra_arquivo(FileSystem *fs,  const char *file_path){
     char buffer[BLOCK_SIZE+1];
     buffer[BLOCK_SIZE] = '\0';
 
-    //ATENCAO
-    FILE *fs_file = fopen("arquivo", "r+b");
-
     while(current_block != -1) {
         //ATENCAO
         read_block(fs_file,current_block,buffer);
@@ -563,9 +558,8 @@ void mostra_arquivo(FileSystem *fs,  const char *file_path){
 
     time(&file->access_time);
 
-    fclose(fs_file);
-
 }
+
 void init_db(Database *db) {
     db->count = 0;
 }
@@ -624,6 +618,58 @@ void print_database(Database *db) {
     }
 }
 
+void busca(Database *db, const char *search_string) {
+    printf("Resultados da busca para '%s':\n", search_string);
+    int found = 0;
+    for (int i = 0; i < db->count; i++) {
+        if (strstr(db->paths[i], search_string) != NULL) {
+            printf("%s\n", db->paths[i]);
+            found = 1;
+        }
+    }
+    if (!found) {
+        printf("Nenhum arquivo ou diretório encontrado contendo '%s' no nome.\n", search_string);
+    }
+}
+
+void status(FileSystem *fs) {
+    int total_directories = 0;
+    int total_files = 0;
+    int free_space = 0;
+    int wasted_space = 0;
+
+    // Calcular espaço livre
+    for (int i = 0; i < MAX_FILE_SIZE / BLOCK_SIZE; i++) {
+        if (fs->bitmap[i] == 0) {
+            free_space += BLOCK_SIZE;
+        }
+    }
+
+    // Função auxiliar para percorrer o sistema de arquivos
+    void traverse_directory(Directory *dir) {
+        total_directories++;
+        for (int i = 0; i < dir->file_count; i++) {
+            if (dir->files[i].is_directory) {
+                traverse_directory(dir->files[i].directory);
+            } else {
+                total_files++;
+                int file_blocks = (dir->files[i].size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+                int actual_size = file_blocks * BLOCK_SIZE;
+                wasted_space += (actual_size - dir->files[i].size);
+            }
+        }
+    }
+
+    // Percorrer a estrutura de diretórios começando do root
+    traverse_directory(&fs->root);
+
+    // Imprimir informações
+    printf("Status do Sistema de Arquivos:\n");
+    printf("Quantidade de diretórios: %d\n", total_directories);
+    printf("Quantidade de arquivos: %d\n", total_files);
+    printf("Espaço livre: %d bytes\n", free_space);
+    printf("Espaço desperdiçado: %d bytes\n", wasted_space);
+}
 
 
 void prompt() {
@@ -633,7 +679,11 @@ void prompt() {
     Database db;
 
     char comando[500];
-    
+
+    char *fs_path = NULL; //Vou querer esse variável para guardar o caminho do f
+
+    FILE *fs_file = NULL;
+
     while (1) {
         printf("\n{ep3}: ");
         fgets(comando, sizeof(comando), stdin);
@@ -649,14 +699,14 @@ void prompt() {
         }
 
         if (strcmp(cmd, "monta") == 0) {
-            char *arquivo = strtok(NULL, " ");
+            fs_path = strtok(NULL, " ");
 
-            printf("%s \n", arquivo);
-            if (arquivo == NULL) {
+            printf("%s \n", fs_path);
+            if (fs_path == NULL) {
                 printf("Erro: Caminho do arquivo não fornecido.\n");
                 continue;
             }
-            mount_fs(&fs, arquivo);
+            fs_file = mount_fs(&fs, fs_path);
             mounted = 1;
 
         } else if (!mounted) {
@@ -670,7 +720,7 @@ void prompt() {
                 printf("Erro: Caminhos de origem e destino não fornecidos.\n");
                 continue;
             }
-            copy_file(&fs, origem, destino);
+            copy_file(&fs, origem, destino, fs_file);
 
         } else if (strcmp(cmd, "criadir") == 0) {
             char *diretorio = strtok(NULL, " ");
@@ -695,7 +745,7 @@ void prompt() {
                 printf("Erro: Caminho do arquivo não fornecido.\n");
                 continue;
             }
-            mostra_arquivo(&fs,arquivo);
+            mostra_arquivo(&fs,arquivo,fs_file);
 
         } else if (strcmp(cmd, "apaga") == 0) {
             char *arquivo = strtok(NULL, " ");
@@ -726,13 +776,45 @@ void prompt() {
             atualizadb(&fs,&db);
             print_database(&db);
 
+        } else if(strcmp(cmd, "desmonta") ==0){
+
+            if (mounted){
+                save_filesystem(&fs, fs_file);
+                unmount_fs(&fs,fs_file);
+                mounted = 0;
+                printf("Sistema de arquivos desmontado. \n");
+            } else {
+                printf("Erro: Nenhum sistema de arquivos montado. \n");
+            }
+        } else if (strcmp(cmd, "busca") == 0) {
+            char *search_string = strtok(NULL, " ");
+            if (search_string == NULL) {
+                printf("Erro: String de busca não fornecida.\n");
+                continue;
+            }
+            busca(&db, search_string);
+
+        } else if (strcmp(cmd, "status") == 0) {
+            status(&fs);
+
+        } else if(strcmp(cmd, "sai") == 0){
+
+            if (mounted){
+                save_filesystem(&fs, fs_file);
+                unmount_fs(&fs,fs_file);
+                mounted = 0;
+                printf("Saindo do simulador. \n");
+            }
+
+            return;
+
         } else {
             printf("Comando desconhecido.\n");
-        }
+        } 
 
-        FILE *fs_file = fopen("arquivo", "r+b");
-        save_filesystem(&fs, fs_file);
-        fclose(fs_file);
+        if (mounted) {
+            save_filesystem(&fs, fs_file);
+        }        
     }
 }
 
