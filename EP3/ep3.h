@@ -33,7 +33,6 @@ typedef struct Directory {
     char name[MAX_FILENAME_LEN];
     File files[MAX_FILES];
     int file_count;
-    struct Directory *parent;
 } Directory;
 
 typedef struct {
@@ -42,8 +41,17 @@ typedef struct {
     Directory root;
 } FileSystem;
 
+typedef struct{
+    char paths [MAX_FILES][MAX_PATH_LEN];
+    int count;
+} Database;
+
 void create_dir(FileSystem *fs, const char *path);
 
 Directory* navigate_to_directory(Directory *root, const char *path);
 
 void copy_file(FileSystem *fs, const char *src_path, const char *dest_path);
+
+void create_file(FileSystem *fs, const char *file_path, int size) ;
+
+
