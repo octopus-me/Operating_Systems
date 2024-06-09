@@ -1,5 +1,6 @@
 #include "ep3.h"
 
+
 void load_directory(FILE *fs_file,Directory *dir){
     fread(&dir->file_count,sizeof(int),1,fs_file);
     for(int i=0;i<dir->file_count;i++){
@@ -316,7 +317,6 @@ void create_dir(FileSystem *fs, const char *path){
     Directory *new_dir = malloc(sizeof(Directory));
     strcpy(new_dir->name,dir_name);
     new_dir->file_count = 0;
-    new_dir->parent = parent_dir;
 
     File new_dir_file;
     strcpy(new_dir_file.name,dir_name);
@@ -341,7 +341,6 @@ void unmount_fs(const char *file_path, FileSystem *fs) {
 
 
 void list_directory(const char *path, FileSystem *fs) {
-	printf("LISTAR \n");
     Directory *dir = navigate_to_directory(&fs->root, path);
     if (dir == NULL) {
         printf("Diretório não encontrado.\n");
@@ -498,116 +497,113 @@ void toca_arquivo(FileSystem *fs, const char *path) {
     printf("Arquivo %s criado.\n", file_name);
 }
 
-// int main() {
-//     FileSystem fs;
-//     mount_fs(&fs, "arquivo");
+File *find_file(Directory *dir, const char *file_name){
+    for(int i=0;i<dir->file_count;i++){
+        if(strcmp(dir->files[i].name, file_name)==0 && !dir->files[i].is_directory){
+            return &dir->files[i];
+        }
+    }
+    return NULL;
+}
 
-//     create_dir(&fs, "/novo_dir");
-//     copy_file(&fs, "source.txt", "/novo_dir/copiadest.txt");
+void mostra_arquivo(FileSystem *fs,  const char *file_path){
+    char parent_path[MAX_PATH_LEN];
+    char file_name[MAX_FILENAME_LEN];
 
-//     delete_dir(&fs, "/novo_dir");
+    strcpy(parent_path, file_path);
+    char *last_slash = strrchr(parent_path, '/');
+    if(last_slash != NULL){
+        strcpy(file_name, last_slash+1);
+        *last_slash ='\0';
+    } else {
+        strcpy(parent_path, "/");
+        strcpy(file_name, file_path);
+    }
 
-//     FILE *fs_file = fopen("arquivo", "r+b");
-//     save_filesystem(&fs, fs_file);
-//     fclose(fs_file);
+    Directory *parent_dir = navigate_to_directory(&fs->root, parent_path);
+    if(parent_dir == NULL){
+        printf("Diretorio pai não encontrado. \n");
+        return;
+    }
 
-//     return 0;
-// }
+    File *file = find_file(parent_dir, file_name);
+    if(file==NULL){
+        printf("Arquivo não encontrado. \n");
+        return;
+    }
 
+    // Ler e exibir o conteúdo do arquivo
+    int current_block = file->start_block;
+    char buffer[BLOCK_SIZE+1];
+    buffer[BLOCK_SIZE] = '\0';
 
-// int main() {
-//     FileSystem fs;
+    //ATENCAO
+    FILE *fs_file = fopen("arquivo", "r+b");
 
-//     // Montar o sistema de arquivos
-//     mount_fs(&fs, "arquivo");
+    while(current_block != -1) {
+        //ATENCAO
+        read_block(fs_file,current_block,buffer);
+        printf("%s", buffer);
+        current_block = fs->fat[current_block];
+    }
 
-//     // Criar um diretório
-//     create_dir(&fs, "/novo_dir");
+    time(&file->access_time);
 
-//     //list_directory("/",&fs);
-    
+    fclose(fs_file);
 
-//     // Copiar um arquivo
-//     copy_file(&fs, "source.txt", "/novo_dir/copiadest.txt");
-//     copy_file(&fs, "source.txt", "/novo_dir/novacopiadest.txt");
+}
+void init_db(Database *db) {
+    db->count = 0;
+}
 
-//     create_dir(&fs,"/novo_dir/novo_dir2");
-//     create_dir(&fs,"/segundodir");
+void fill_database(Database *db, Directory *dir, char *path) {
+    // Adicionar o diretório atual ao banco de dados
+    if (db->count < MAX_FILES) {
+        strcpy(db->paths[db->count], path);
+        strcat(db->paths[db->count], "/");
+        db->count++;
+    }
 
-//     copy_file(&fs, "source.txt","/segundodir/segundacopia.txt");
+    // Navegar pelos arquivos e subdiretórios
+    for (int i = 0; i < dir->file_count; i++) {
+        File *file = &dir->files[i];
+        char new_path[MAX_PATH_LEN];
+        strcpy(new_path, path);
+        strcat(new_path, "/");
+        strcat(new_path, file->name);
 
-//     create_dir(&fs,"/novo_dir/novo_dir2/wallace");
-//     create_dir(&fs,"/novo_dir/novo_dir2/wallace/beatriz");
+        if (file->is_directory) {
+            fill_database(db, file->directory, new_path);
+        } else {
+            if (db->count < MAX_FILES) {
+                strcpy(db->paths[db->count], new_path);
+                db->count++;
+            }
+        }
+    }
+}
 
-//     copy_file(&fs, "source2.txt","/novo_dir/novo_dir2/wallace/beatriz/bia.txt");
-//     //list_directory("/novo_dir",&fs);
-
-//     delete_dir(&fs,"/novo_dir/novo_dir2");
-
-//     copy_file(&fs,"TESTE/e.txt","/novo.txt");
-
-//     // Salvar o sistema de arquivos
-//     FILE *fs_file = fopen("arquivo", "r+b");
-//     save_filesystem(&fs, fs_file);
-//     fclose(fs_file);
-
-//     printf("CHEGOU AQUI \n");
-
-//     // Reabrir o sistema de arquivos
-//     mount_fs(&fs, "arquivo");
-
-//     list_directory("/",&fs);
-
-//     char comando[500];
-//     while(1){
-//         printf("{ep3}: ");
-//         scanf("%s",comando);
-
-//         if(strcmp (strtok(comando," "),"monta")==0) {
-//             printf("%s", strtok(comando, "o"));
-//             printf("SIM \n");
-//         }
-
-
-//     }
-
-
-//     // // Verificar se a cópia do arquivo persistiu
-//     // Directory *dir = navigate_to_directory(&fs.root, "/novo_dir");
-//     // if (dir != NULL) {
-//     //     for (int i = 0; i < dir->file_count; i++) {
-//     //         printf("Arquivo no diretório: %s\n", dir->files[i].name);
-//     //     }
-//     // }
-
-//     // // Deletar o diretório
-//     // delete_dir(&fs, "/novo_dir");
-
-//     // //list_directory("/",&fs);
-
-//     // // Salvar novamente após deleção
-//     // fs_file = fopen("filesystem.dat", "r+b");
-//     // save_filesystem(&fs, fs_file);
-//     // fclose(fs_file);
-
-//     // // Reabrir novamente o sistema de arquivos
-//     // mount_fs(&fs, "filesystem.dat");
-
-//     //list_directory("/",&fs);
-
-//     return 0;
-// }
+void atualizadb(FileSystem *fs, Database *db) {
+    init_db(db);
+    fill_database(db, &fs->root, "");
+}
 
 
-
+void print_database(Database *db) {
+    for (int i = 0; i < db->count; i++) {
+        printf("%s\n", db->paths[i]);
+    }
+}
 
 void prompt() {
     FileSystem fs;
     int mounted = 0;
 
+    Database db;
+
     char comando[500];
     while (1) {
-        printf("{ep3}: ");
+        printf("\n{ep3}: ");
         fgets(comando, sizeof(comando), stdin);
 
         // Remover nova linha do comando
@@ -615,12 +611,15 @@ void prompt() {
 
         // Tokenizar o comando
         char *cmd = strtok(comando, " ");
+        printf("%s",cmd);
         if (cmd == NULL) {
             continue;
         }
 
         if (strcmp(cmd, "monta") == 0) {
             char *arquivo = strtok(NULL, " ");
+
+            printf("%s \n", arquivo);
             if (arquivo == NULL) {
                 printf("Erro: Caminho do arquivo não fornecido.\n");
                 continue;
@@ -658,13 +657,13 @@ void prompt() {
             delete_dir(&fs, diretorio);
 
         } else if (strcmp(cmd, "mostra") == 0) {
-            //NAO HA NADA AINDA
-            // char *arquivo = strtok(NULL, " ");
-            // if (arquivo == NULL) {
-            //     printf("Erro: Caminho do arquivo não fornecido.\n");
-            //     continue;
-            // }
-            // show_file(&fs, arquivo);
+            // NAO HA NADA AINDA
+            char *arquivo = strtok(NULL, " ");
+            if (arquivo == NULL) {
+                printf("Erro: Caminho do arquivo não fornecido.\n");
+                continue;
+            }
+            mostra_arquivo(&fs,arquivo);
 
         } else if (strcmp(cmd, "apaga") == 0) {
             char *arquivo = strtok(NULL, " ");
@@ -690,6 +689,10 @@ void prompt() {
             }
             printf("%s \n", arquivo);
             toca_arquivo(&fs, arquivo);
+
+        } else if(strcmp(cmd, "atualizadb")==0){
+            atualizadb(&fs,&db);
+            print_database(&db);
 
         } else {
             printf("Comando desconhecido.\n");
