@@ -76,33 +76,36 @@ void print_directory_tree(Directory *dir, int level) {
 FILE * mount_fs(FileSystem *fs, const char *fs_path){
     FILE *fs_file = fopen(fs_path, "r+b");
 
+
+
     if (fs_file) {
-        load_filesystem(fs,fs_file);
-        printf("Sistema de arquivos montado de %s: \n", fs_path);
-        print_directory_tree(&fs->root,0);
-    } else {
-        fs_file = fopen(fs_path, "w+b");
-        if(!fs_file) {
-            printf("Erro ao criar o arquivo do sistema de arquivos. \n");
-            return NULL;
-        }
-        init_fs(fs);
-        save_filesystem(fs,fs_file);
-        printf("Novo sistema de arquivos criado %s. \n", fs_path);
-    }
+    
+        fseek(fs_file,0,SEEK_END);
+    	int size = ftell(fs_file);
+    	fseek(fs_file,0,SEEK_SET);
+    	
+    	if(size > 0){
+           	load_filesystem(fs,fs_file);
+        	printf("Sistema de arquivos montado de %s: \n", fs_path);
+        	print_directory_tree(&fs->root,0);
+        	return fs_file;
+    	}
+    	
+
+    } 
+    
+	fs_file = fopen(fs_path, "w+b");
+	if(!fs_file) {
+	    printf("Erro ao criar o arquivo do sistema de arquivos. \n");
+	    return NULL;
+	}
+	init_fs(fs);
+	save_filesystem(fs,fs_file);
+	printf("Novo sistema de arquivos criado %s. \n", fs_path);
+
+
     return fs_file;
 }
-
-// O arquivo do sistema de arquivos simulado ("fs_file") é passado como parâmetro.
-// fseek(fs_file, sizeof(FileSystem) + block_index * BLOCK_SIZE, SEEK_SET);
-// "fseek" reposiciona o ponteiro do arquivo para o início do bloco que desejamos escrever.
-// O ponteiro do arquivo é movido para a posição sizeof(FileSystem)+ block_index * BLOCK_SIZE;
-// Isso é nescessário porque os primeiros sizeof(FileSystem) bytes do arquivo são reservados para armazenar
-// as estruturas de dados do sistema de arquivos (FAT, Bitmap, e diretórios);
-// Após esses bytes, os blocos de dados reais começam;
-
-// fwrite(data, sizeof(char), BLOCK_SIZE, fs_file);
-// fwrite escreve BLOCK_SIZE bytes do buffer data no arquivo a partir da posição atual do ponteiro do arquivo.
 
 void write_block(FILE *fs_file, int block_index, const char *data){
     // Posiciono o ponteiro do file no local exato onde desejo fazer a escrita
@@ -175,11 +178,6 @@ void copy_file(FileSystem *fs, const char *src_path, const char *dest_path, FILE
     new_file.is_directory = 0;
     new_file.directory = NULL;
 
-    // Façamos agora:
-    // Copiar os bytes do arquivo original no sistema de arquivos
-    // Atualizar o FAT e o Bitmap
-    // Definir o ponto inicial do arquivo
-
     int prev_block = -1;
     int first_block = -1;
     char buffer[BLOCK_SIZE];
@@ -201,8 +199,6 @@ void copy_file(FileSystem *fs, const char *src_path, const char *dest_path, FILE
         int bytes_to_write = (size < BLOCK_SIZE) ? size : BLOCK_SIZE;
         fread(buffer, sizeof(unsigned char), bytes_to_write, src_file);
 
-        // ATENÇÂO: O que fazer quando tem menos bytes que o tamanho do bloco?
-        // Inicialmente irei preencher tudo com zeros
         if(bytes_to_write < BLOCK_SIZE) {
             memset(buffer+bytes_to_write,0,BLOCK_SIZE-bytes_to_write);
         }
@@ -241,8 +237,7 @@ void copy_file(FileSystem *fs, const char *src_path, const char *dest_path, FILE
 
 }
 
-// FUNÇÕES PARA OS DIRETÓRIOS
-// Antes de criar um diretório, precisamos navegar pela estrutura de diretórios para encontrar o local correto e adicionar o novo diretório lá.
+
 Directory* navigate_to_directory(Directory *root, const char *path){
     char *token;
     char path_copy[MAX_PATH_LEN];
@@ -320,9 +315,6 @@ void unmount_fs(FileSystem *fs, FILE *fs_file) {
     // Fechar o arquivo de sistema de arquivos
     fclose(fs_file);
     
-    // Não há necessidade de liberar `files` dentro de `Directory` pois é estático
-    // A função ainda vai percorrer os diretórios para garantir que estamos liberando corretamente
-
     void free_directory(Directory *dir) {
         for (int i = 0; i < dir->file_count; i++) {
             if (dir->files[i].is_directory) {
@@ -345,14 +337,14 @@ void list_directory(const char *path, FileSystem *fs) {
         return;
     }
 
-    // Print header
+
     printf("%-20s | %-10s | %-25s | %-25s | %-25s |\n", "Nome", "Tamanho", "Criado em", "Modificado em", "Acessado em");
     printf("----------------------------------------------------------------------------------------------------------------------\n");
 
-    // Print files and directories
+
     for (int i = 0; i < dir->file_count; i++) {
         File *file = &dir->files[i];
-        // Remove newline character from ctime output
+
         char creation_time[25], modification_time[25], access_time[25];
         strncpy(creation_time, ctime(&file->creation_time), 24);
         creation_time[24] = '\0';
@@ -550,7 +542,6 @@ void mostra_arquivo(FileSystem *fs,  const char *file_path, FILE *fs_file){
     buffer[BLOCK_SIZE] = '\0';
 
     while(current_block != -1) {
-        //ATENCAO
         read_block(fs_file,current_block,buffer);
         printf("%s", buffer);
         current_block = fs->fat[current_block];
@@ -684,6 +675,7 @@ void prompt() {
 
     FILE *fs_file = NULL;
 
+
     while (1) {
         printf("\n{ep3}: ");
         fgets(comando, sizeof(comando), stdin);
@@ -710,6 +702,9 @@ void prompt() {
             mounted = 1;
 
         } else if (!mounted) {
+
+            if(strcmp(cmd, "sai") == 0) return;
+
             printf("Erro: Nenhum sistema de arquivos montado.\n");
             continue;
 
@@ -721,6 +716,7 @@ void prompt() {
                 continue;
             }
             copy_file(&fs, origem, destino, fs_file);
+            save_filesystem(&fs, fs_file);
 
         } else if (strcmp(cmd, "criadir") == 0) {
             char *diretorio = strtok(NULL, " ");
@@ -729,6 +725,7 @@ void prompt() {
                 continue;
             }
             create_dir(&fs,diretorio);
+            save_filesystem(&fs, fs_file);
 
         } else if (strcmp(cmd, "apagadir") == 0) {
             char *diretorio = strtok(NULL, " ");
@@ -737,9 +734,9 @@ void prompt() {
                 continue;
             }
             delete_dir(&fs, diretorio);
+            save_filesystem(&fs, fs_file);
 
         } else if (strcmp(cmd, "mostra") == 0) {
-            // NAO HA NADA AINDA
             char *arquivo = strtok(NULL, " ");
             if (arquivo == NULL) {
                 printf("Erro: Caminho do arquivo não fornecido.\n");
@@ -754,6 +751,7 @@ void prompt() {
                 continue;
             }
             delete_file_by_name(&fs, arquivo);
+            save_filesystem(&fs, fs_file);
 
         } else if (strcmp(cmd, "lista") == 0) {
             char *diretorio = strtok(NULL, " ");
@@ -799,12 +797,11 @@ void prompt() {
 
         } else if(strcmp(cmd, "sai") == 0){
 
-            if (mounted){
-                save_filesystem(&fs, fs_file);
-                unmount_fs(&fs,fs_file);
-                mounted = 0;
-                printf("Saindo do simulador. \n");
-            }
+            save_filesystem(&fs, fs_file);
+            unmount_fs(&fs,fs_file);
+            mounted = 0;
+            printf("Saindo do simulador. \n");
+
 
             return;
 
