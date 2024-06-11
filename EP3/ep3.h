@@ -46,11 +46,33 @@ typedef struct{
     int count;
 } Database;
 
-void create_dir(FileSystem *fs, const char *path);
 
+void load_directory(FILE *fs_file,Directory *dir);
+void load_filesystem(FileSystem *fs, FILE *fs_file);
+void save_directory(FILE *fs_file, Directory *dir);
+void save_filesystem(FileSystem *fs, FILE *fs_file);
+void init_fs(FileSystem *fs);
+void print_directory_tree(Directory *dir, int level);
+FILE * mount_fs(FileSystem *fs, const char *fs_path);
+void write_block(FILE *fs_file, int block_index, const char *data);
+void read_block(FILE *fs_file, int block_index, char *data);
+int find_free_block(FileSystem *fs);
+void copy_file(FileSystem *fs, const char *src_path, const char *dest_path, FILE *fs_file);
 Directory* navigate_to_directory(Directory *root, const char *path);
-
-void copy_file(FileSystem *fs, const char *src_path, const char *dest_path);
-
-void create_file(FileSystem *fs, const char *file_path, int size) ;
-
+void create_dir(FileSystem *fs, const char *path);
+void unmount_fs(FileSystem *fs, FILE *fs_file) ;
+void list_directory(const char *path, FileSystem *fs);
+void delete_file(FileSystem *fs, File *file);
+void delete_directory(FileSystem *fs, Directory *dir);
+void delete_dir(FileSystem *fs, const char *path);
+void delete_file_by_name(FileSystem *fs, const char *path);
+void toca_arquivo(FileSystem *fs, const char *path);
+File *find_file(Directory *dir, const char *file_name);
+void mostra_arquivo(FileSystem *fs,  const char *file_path, FILE *fs_file);
+void init_db(Database *db);
+void fill_database(Database *db, Directory *dir, char *path);
+void atualizadb(FileSystem *fs, Database *db);
+void print_database(Database *db);
+void busca(Database *db, const char *search_string);
+void status(FileSystem *fs);
+void prompt();
